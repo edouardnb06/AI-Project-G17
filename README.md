@@ -1,4 +1,4 @@
-# AI-project
+# ITE351-AI-Projects-2026
 
 Task 1: group members
 - Edouard de Noblet, Mechanical engineering, edenoblet@gmail.com
