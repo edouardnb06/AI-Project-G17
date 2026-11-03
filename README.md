@@ -7,6 +7,7 @@ Task 1: group members
 - Zineb El Koussaimi, Computer science, koussaimizineb@gmail.com
 
 Task 3: Research idea
+
 Title: Forecasting Network Congestion Before It Happens: Early-Warning Classification on Queue Telemetry
 
 Proposal (Option A):
