@@ -1,0 +1,48 @@
+{
+  "seed": 0,
+  "train": [
+    "run_01",
+    "run_02",
+    "run_03",
+    "run_04",
+    "run_05",
+    "run_07",
+    "run_10",
+    "run_11",
+    "run_12",
+    "run_18",
+    "run_19",
+    "run_20",
+    "run_21",
+    "run_22",
+    "run_23",
+    "run_24",
+    "run_25",
+    "run_27",
+    "run_28",
+    "run_29",
+    "run_35",
+    "run_37",
+    "run_38"
+  ],
+  "validation": [
+    "run_08",
+    "run_09",
+    "run_13",
+    "run_14",
+    "run_17",
+    "run_26",
+    "run_31",
+    "run_36"
+  ],
+  "test": [
+    "run_06",
+    "run_15",
+    "run_16",
+    "run_30",
+    "run_32",
+    "run_33",
+    "run_34",
+    "run_39"
+  ]
+}
