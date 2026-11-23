@@ -1,0 +1,4 @@
+name,split,MAE,RMSE
+persistence,val,1.2288,2.5126
+mean_10,val,1.6049,3.1373
+linear_regression,val,1.0961,2.31
