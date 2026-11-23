@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src import evaluate, load
+from extras import evaluate, windows
+from src import load
 
 
 def toy_run():
@@ -24,7 +25,7 @@ def test_to_wide_keeps_lost_samples_as_nan_rows():
 
 def test_windows_align_inputs_and_targets():
     wide = load.to_wide(toy_run())
-    X, Y, origin = load.make_windows(wide, lookback=2, horizons=(1, 2), features=(load.TARGET,))
+    X, Y, origin = windows.make_windows(wide, lookback=2, horizons=(1, 2), features=(load.TARGET,))
     # origins are observed samples with a full lookback: seq 1, 2, 4, 5
     assert list(origin) == [1, 2, 4, 5]
     assert X.shape == (4, 2, 1) and Y.shape == (4, 2)

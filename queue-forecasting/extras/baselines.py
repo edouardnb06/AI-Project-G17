@@ -5,23 +5,24 @@ to t. Quantile forecasts are the point forecast plus the 0.1/0.5/0.9 quantiles
 of the training-run residuals for that horizon, clipped to [0, buffer size].
 
 Run from the queue-forecasting folder:
-    python -m src.baselines                 # fit on train, report validation
-    python -m src.baselines --split test    # once, at the very end
+    python -m extras.baselines                 # fit on train, report validation
+    python -m extras.baselines --split test    # once, at the very end
 """
 import argparse
 import sys
 from pathlib import Path
 
-if __package__ in (None, ""):  # also allow `python src/baselines.py`
+if __package__ in (None, ""):  # also allow `python extras/baselines.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import pandas as pd
 
-from src import evaluate, load
+from extras import evaluate, windows
+from src import load
 
 
-def origins_and_targets(wide, horizons=load.HORIZONS):
+def origins_and_targets(wide, horizons=windows.HORIZONS):
     """Origins = received bottleneck samples; Y[:, i] = depth at origin + horizons[i]."""
     q = wide[load.TARGET].to_numpy(dtype=float)
     origin = np.flatnonzero(~np.isnan(q))
@@ -37,7 +38,7 @@ def ewma(q, alpha):
 class Baseline:
     """Point forecast from level(); residual quantiles fitted on training runs."""
 
-    def __init__(self, horizons=load.HORIZONS):
+    def __init__(self, horizons=windows.HORIZONS):
         self.horizons = tuple(horizons)
 
     def level(self, q, i):
@@ -97,10 +98,10 @@ class EWMA(Baseline):
         return ewma(q, self.alpha[i])
 
 
-def run(train_ids, eval_ids, horizons=load.HORIZONS):
+def run(train_ids, eval_ids, horizons=windows.HORIZONS):
     """Fit both baselines on train_ids; one table row per model and horizon on eval_ids."""
-    train = list(load.load_wide(train_ids).values())
-    evals = list(load.load_wide(eval_ids).values())
+    train = list(windows.load_wide(train_ids).values())
+    evals = list(windows.load_wide(eval_ids).values())
     Y = np.concatenate([origins_and_targets(w, horizons)[1] for w in evals])
     tables = []
     for name, model in [("persistence", Persistence(horizons)), ("ewma", EWMA(horizons))]:

@@ -1,14 +1,15 @@
 """The baselines run end to end on a few real runs."""
 import numpy as np
 
-from src import baselines, load
+from extras import baselines, windows
+from src import load
 
 
 def test_baselines_end_to_end():
     train, valid = ["run_01", "run_02"], ["run_08"]
     table = baselines.run(train, valid)
     assert set(table["model"]) == {"persistence", "ewma"}
-    assert sorted(table["horizon"].unique()) == list(load.HORIZONS)
+    assert sorted(table["horizon"].unique()) == list(windows.HORIZONS)
     metrics = table[["MAE", "RMSE", "pinball", "coverage_80"]].to_numpy()
     assert np.isfinite(metrics).all()
     assert ((table["coverage_80"] >= 0) & (table["coverage_80"] <= 1)).all()

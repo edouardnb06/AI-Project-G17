@@ -9,3 +9,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
+
+# large tables from: python -m src.make_tables --all
+data/tables_all/
