@@ -7,7 +7,7 @@ Write your name next to a role. One person can take more than one role.
 | role | notebook | who |
 |---|---|---|
 | A. Data, quickstart and baselines | `01_quickstart.ipynb`, `02_baselines.ipynb` | Mohamed Ali |
-| B. Ridge regression | `03_linear_ridge.ipynb` | |
+| B. Ridge regression | `03_linear_ridge.ipynb` | |Edouard de Noblet |
 | C. Random forest | `04_random_forest.ipynb` | |
 | D. Gradient boosting | `05_gradient_boosting.ipynb` | |
 | E. Neural network | `06_neural_net.ipynb` | |
