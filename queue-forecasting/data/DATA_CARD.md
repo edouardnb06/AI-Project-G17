@@ -13,11 +13,60 @@ Data collected by Mohamed Ali Kabiri on his emulated network testbed (BMv2 softw
 
 | path | content |
 |---|---|
-| `runs/run_01.parquet` ... `runs/run_39.parquet` | one file per run, with the columns below |
+| `tables/train.parquet`, `tables/val.parquet`, `tables/test.parquet` | ready-made tables for the task, described in "The tables" |
+| `runs/run_01.parquet` ... `runs/run_39.parquet` | raw data, one file per run, described in "Columns of the raw runs" |
 | `sample.csv` | first 10 s of `run_01` (`t_ms < 10000`), 9,978 rows with the same columns, for a quick look without Parquet |
 | `splits.json` | fixed run-wise split: 23 train, 8 validation and 8 test runs |
 
-## Columns
+## The tables
+
+`src/make_tables.py` builds the tables from the raw runs and `splits.json`. One row is one moment *t* of one run. Everything is measured at hop 0, the bottleneck switch.
+
+| column | type | unit | meaning |
+|---|---|---|---|
+| `run_id` | string | | `run_01` ... `run_39` |
+| `t_ms` | float64 | ms | receive time of sample *t*, counted from the first received sample of the run |
+| `y` | int64 | packets | target: queue length at sample *t* + 10 |
+| `lag_1` ... `lag_10` | int64 | packets | the last 10 queue lengths: `lag_1` is sample *t* (now), `lag_10` is sample *t* - 9 |
+| `mean_10` | float64 | packets | mean of samples *t* - 9 ... *t* |
+| `mean_50` | float64 | packets | mean of samples *t* - 49 ... *t* |
+| `max_50` | int64 | packets | largest of samples *t* - 49 ... *t* |
+| `slope_10` | float64 | packets per sample | slope of the straight line fitted (least squares) through samples *t* - 9 ... *t* |
+| `delay_now_ms` | float64 | ms | `qdelay_us` of sample *t*, divided by 1000 |
+
+All features use samples up to *t* only. `y` is the only column that looks ahead.
+
+**Only every 5th row is kept**, to keep the files small: within each run, the 1st, 6th, 11th, ... of the valid rows. `python -m src.make_tables` builds exactly these tables. `python -m src.make_tables --all` keeps every row and writes larger tables (26 MB together) to `tables_all/`, which is not shared through git.
+
+| file | rows | runs | size (KB) |
+|---|---:|---:|---:|
+| tables/train.parquet | 196,306 | 23 | 3,588 |
+| tables/val.parquet | 68,097 | 8 | 1,391 |
+| tables/test.parquet | 68,116 | 8 | 1,327 |
+
+### Rows that are not in the tables
+
+A row needs 60 samples in a row without a gap: the 50 samples up to *t* and the 10 samples up to the target. Moments where one of these samples was lost, or lies before the start or after the end of the run, are dropped. No row crosses a run boundary or a gap.
+
+This drops 80,613 of the 1,743,125 received samples (about 1 in 20), but **not at random**. Samples are mostly lost when the queue is full, so the dropped moments are mostly the ones with a long queue:
+
+| | received samples with a received target | valid rows (before keeping every 5th) |
+|---|---:|---:|
+| number | 1,734,106 | 1,662,512 |
+| mean of `y` | 9.15 packets | 7.24 packets |
+| `y` is 60 or more | 3.46% | 1.33% |
+| `y` is 0 | 57.1% | 59.5% |
+
+Almost two thirds of the moments with `y` at 60 or more are missing. Scores on these tables therefore say little about completely full queues. The effect on the average scores is small: for persistence on the validation runs, the MAE is about 2% lower on the table than on all moments with a received target. Mention this in the report.
+
+### Good to know
+
+- **Most rows are quiet.** In about 60% of the rows `y` is 0. A model that is good on quiet moments already gets a low MAE. RMSE shows the large mistakes better.
+- **10 samples are 20 ms, not exactly 20 ms in `t_ms`.** The target is always exactly 10 samples later. `t_ms` is a receive time, so the difference in `t_ms` is 20.0 ms at the median and between 13.7 and 25.5 ms for 90% of the rows. Count samples, not milliseconds.
+- **Some features repeat each other.** `mean_10` and `slope_10` are weighted sums of `lag_1` ... `lag_10`.
+- Neighbouring rows of a run are very similar, so never split the rows at random. Use the three tables as they are, or cross-validation grouped by `run_id` on `train`.
+
+## Columns of the raw runs
 
 | column | type | unit | meaning |
 |---|---|---|---|
@@ -30,9 +79,9 @@ Data collected by Mohamed Ali Kabiri on his emulated network testbed (BMv2 softw
 
 Each received sample has exactly two rows (hop 0 and hop 1). Rows are sorted by `seq`, then `hop`.
 
-The forecasting target is `qdepth_pkts` at hop 0. Forecast horizons count samples (`seq`), not `t_ms`.
+The target of the task is `qdepth_pkts` at hop 0, 10 samples ahead. The horizon is counted in samples (`seq`), not in `t_ms`.
 
-## Known quirks
+## Known quirks of the raw runs
 
 - **Lost samples (probe loss).** 11,875 of the 1,755,000 measurement packets were lost (0.68%; between 0.22% and 2.59% per run). They show up as missing `seq` values, and nothing is filled in. The losses are not random. For 77% of them, the last bottleneck reading before the loss was 60 packets or more, so most packets are lost when the 64-packet buffer is full. Dropping lost targets therefore removes part of the high end of the target.
 - **Rare host stalls.** All switches and hosts run on one machine, and that machine sometimes pauses. In `t_ms` a stall shows up as a jump from one received sample to the next that is well beyond 2 ms per `seq` step. Pauses longer than 20 ms beyond the expected spacing happen 336 times, in 32 runs. Pauses longer than 50 ms happen 9 times, in 6 runs. The longest is 673 ms, in `run_39`. Because `t_ms` is not evenly spaced, use `seq` as the time axis.
@@ -42,7 +91,7 @@ The forecasting target is `qdepth_pkts` at hop 0. Forecast horizons count sample
 
 ## Row counts and sizes
 
-In total there are 39 files with 3,486,250 rows (1,743,125 received samples × 2 hops), taking 37.7 MB as Parquet with zstd compression. `sample.csv` is 317 KB.
+The raw data has 39 files with 3,486,250 rows (1,743,125 received samples × 2 hops), taking 37.7 MB as Parquet with zstd compression. `sample.csv` is 317 KB.
 
 | file | rows | received samples | lost samples | size (KB) |
 |---|---:|---:|---:|---:|
@@ -88,7 +137,7 @@ In total there are 39 files with 3,486,250 rows (1,743,125 received samples × 2
 
 ## Splits
 
-`splits.json` lists the run ids for train (23), validation (8) and test (8). It was made in four steps:
+`splits.json` lists the run ids for train (23), validation (8) and test (8). The tables follow it: `val.parquet` holds the validation runs. It was made in four steps:
 
 1. Sort the 39 run ids.
 2. Permute them with `numpy.random.default_rng(0).permutation(39)`.
