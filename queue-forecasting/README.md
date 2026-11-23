@@ -1,99 +1,120 @@
 # Queue forecasting
 
-**Topic: Multi-horizon forecasting of switch queue occupancy from high-frequency telemetry, with prediction intervals.**
+**Task: Predict how many packets will be waiting in a switch's queue 20 ms from now, using its recent history.**
 
-## Task
+You need basic Python and scikit-learn. You do not need to know anything about networks.
 
-Every 2 ms, a measurement packet reports the queue depth and queue delay at two switches in series. Given this telemetry up to sample *t*, forecast the depth of the bottleneck queue (`qdepth_pkts` at hop 0) at four horizons:
+## What is a queue?
 
-| horizon | samples ahead | time ahead |
-|---|---:|---:|
-| t+1 | 1 | 2 ms |
-| t+5 | 5 | 10 ms |
-| t+10 | 10 | 20 ms |
-| t+25 | 25 | 50 ms |
+Think of a supermarket checkout line. Customers join the line, and the cashier serves them one at a time. If customers come faster than the cashier can work, the line gets longer. If nobody comes for a while, the line becomes empty.
 
-For each horizon, a model gives a point forecast and the 0.1, 0.5 and 0.9 quantiles. The interval from the 0.1 to the 0.9 quantile is the 80% prediction interval.
+A network switch works the same way:
 
-## Metrics
+| supermarket | our data |
+|---|---|
+| a customer | a packet (a small piece of data) |
+| the cashier | the output of the switch, which handles 750 packets per second |
+| people waiting | the queue: packets waiting in the switch |
+| the shop has room for 64 people in line | the queue holds at most 64 packets; when it is full, new packets are lost |
 
-`src/evaluate.py` computes all of these per horizon:
+Every 2 ms, a small measurement packet goes through the switch and reports how many packets are waiting. That report is one **sample**. We have 39 recordings ("runs") of 90 seconds each.
 
-- **MAE** and **RMSE** of the point forecast
-- **pinball loss** for the quantiles 0.1, 0.5 and 0.9, and their mean
-- **80% interval coverage**: the share of targets that fall between the 0.1 and 0.9 quantiles, which should be close to 0.80
+Why predict it? A long queue means long waiting times and lost packets. If we know it 20 ms before, there is time to react.
 
-Targets that were lost, or that lie past the end of a run, are left out.
+## The tables
 
-## Data
+The data is ready to use. There is nothing to prepare.
 
-The dataset has 39 runs of 90 s each, one Parquet file per run in `data/runs/`. Each file has the columns `run_id`, `seq`, `t_ms`, `hop`, `qdepth_pkts` and `qdelay_us`. See [`data/DATA_CARD.md`](data/DATA_CARD.md) for units, setup, known quirks, row counts and sizes. `data/sample.csv` holds the first 10 s of `run_01`.
+| file | rows | runs | use it for |
+|---|---:|---:|---|
+| `data/tables/train.parquet` | 196,306 | 23 | teaching the model |
+| `data/tables/val.parquet` | 68,097 | 8 | comparing models and settings |
+| `data/tables/test.parquet` | 68,116 | 8 | **once, at the very end** (see `TASKS.md`) |
 
-The split is by run and fixed in `data/splits.json`: 23 train, 8 validation and 8 test runs.
+**One row is one moment of one run.** It answers two questions: what did the queue look like up to now (the features), and how long was it 20 ms later (`y`)?
 
-- Fit models on train.
-- Choose between them on validation, or with cross-validation grouped by run on the training runs.
-- Use the test runs **once, at the end**.
+| column | meaning |
+|---|---|
+| `run_id` | which run the row comes from (not a feature) |
+| `t_ms` | time since the start of the run, in milliseconds (not a feature) |
+| `y` | **what we predict:** the queue length 10 samples (20 ms) later |
+| `lag_1` ... `lag_10` | the last 10 queue lengths. `lag_1` is the queue **now**, `lag_2` is one sample (2 ms) earlier, ..., `lag_10` is 9 samples (18 ms) earlier |
+| `mean_10` | mean of the last 10 queue lengths |
+| `mean_50` | mean of the last 50 queue lengths (the last 100 ms) |
+| `max_50` | largest of the last 50 queue lengths |
+| `slope_10` | how fast the queue is growing (+) or shrinking (-): packets per sample, from a straight line through the last 10 queue lengths |
+| `delay_now_ms` | how long the newest measurement packet waited in the queue, in milliseconds |
 
-## Models
+Example, the first row of `train.parquet`: `lag_1 = 3` and `lag_2 = 4`, so 3 packets are waiting now and there were 4 a moment ago. `y = 1`, so 20 ms later only 1 was waiting.
 
-The models are up to the group: statistical, gradient boosting, recurrent, and attention or TCN. The baselines to beat are in `src/baselines.py`:
+All features use only the past and the present, never the future. Two rules to keep it that way:
 
-- **persistence**: the depth at t+h is the depth at t
-- **EWMA**: an exponentially weighted mean, with alpha chosen per horizon on the training runs
+- Never use `y`, `run_id` or `t_ms` as a feature.
+- Do not mix the tables or split them again at random. Neighbouring rows of a run are almost the same, so a random split would let the model see the answers. The three tables come from different runs.
 
-Both get their quantiles by adding the training-residual quantiles to the point forecast.
+`data/DATA_CARD.md` has the details, including which moments are missing from the tables.
 
-## Layout
+## Get started
 
-```
-queue-forecasting/
-├── data/
-│   ├── DATA_CARD.md
-│   ├── runs/run_01.parquet ... run_39.parquet
-│   ├── sample.csv
-│   └── splits.json
-├── notebooks/00_explore.ipynb    first look at the data
-├── src/
-│   ├── load.py                   runs, splits, wide format, supervised windows
-│   ├── evaluate.py               metrics per horizon
-│   └── baselines.py              persistence and EWMA
-├── tests/                        data checks, metrics, baselines end to end
-├── pytest.ini
-└── requirements.txt              pinned, Python 3.11 to 3.14
-```
-
-## Setup and commands
-
-Run every command from the `queue-forecasting/` folder.
+Run these in the `queue-forecasting/` folder (Python 3.11 to 3.14):
 
 ```
 python -m venv .venv
 .venv\Scripts\activate            # Windows
 source .venv/bin/activate         # macOS / Linux
 pip install -r requirements.txt
-
-pytest                                  # data checks, metrics, baselines
-python -m src.baselines                 # baseline table on the validation runs
-python -m src.baselines --split test    # only once, at the end
-jupyter lab notebooks/00_explore.ipynb
+jupyter lab notebooks/01_quickstart.ipynb
 ```
 
-## Using the loaders
+Start with `01_quickstart.ipynb`. It goes through every step once. Then choose a role in `TASKS.md`.
+
+## Get a score
 
 ```python
-from src import load, evaluate
+from src.evaluate import score, add_result
 
-splits = load.load_splits()                        # {'train': [...], 'validation': [...], 'test': [...]}
-wide = load.to_wide(load.load_run("run_01"))      # one row per sample, NaN rows for lost samples
-X, Y, origin = load.make_windows(wide, lookback=50)
-# X: (n, 50, 4) last 50 samples of both depths and delays; Y: (n, 4) depth at t+1, 5, 10, 25
-
-X, Y, meta = load.load_windows("train", lookback=50, stride=1)   # meta: run_id, seq of each row
-table = evaluate.evaluate(Y_true, point, quantiles, load.HORIZONS)  # point (n, 4), quantiles (n, 4, 3)
+scores = score(y_val, y_pred)            # {"MAE": ..., "RMSE": ...}
+add_result("my model", "val", scores)    # adds one row to results/results.csv
 ```
 
-With `lookback=50`, all four features and `stride=1`, the training windows take about 0.8 GB as float32, and about twice that while they are being built. On a small machine, use a larger `stride` or a shorter `lookback`.
+Both numbers are in packets, and lower is better. `results/results.csv` is the comparison table of the group, and it fills itself: every call of `add_result` adds one row at the end. If you score the same model twice, it appears twice, and the last row counts.
+
+The first number to beat is **persistence**: the guess that the queue stays as it is now.
+
+## Folders
+
+```
+queue-forecasting/
+├── README.md
+├── TASKS.md               who does what, and what "done" means
+├── requirements.txt       the packages to install
+├── notebooks/             01 quickstart, then one starter notebook per model
+├── data/
+│   ├── tables/            train, val and test: start here
+│   ├── DATA_CARD.md       where the data comes from, and its problems
+│   ├── runs/              the raw recordings
+│   ├── splits.json        which run belongs to train, validation or test
+│   └── sample.csv         10 seconds of raw data, to look at
+├── results/results.csv    the scores of all models
+├── src/
+│   ├── evaluate.py        score and add_result
+│   ├── make_tables.py     builds the tables again (you do not need it)
+│   └── load.py            reads the raw recordings
+├── tests/                 run them with: pytest
+└── extras/                optional, more advanced material
+```
+
+## Glossary
+
+| word | meaning |
+|---|---|
+| **packet** | a small piece of data that travels through a network; a customer in the supermarket |
+| **queue** | the packets waiting in a switch; the checkout line |
+| **sample** | one measurement of the queue; there is one every 2 ms |
+| **horizon** | how far ahead we predict: 10 samples, which is 20 ms |
+| **feature** | a column the model may use to make its prediction |
+| **MAE** | mean absolute error: how many packets the prediction is off, on average |
+| **RMSE** | root mean squared error: like MAE, but large mistakes count more |
 
 ## Credit
 
