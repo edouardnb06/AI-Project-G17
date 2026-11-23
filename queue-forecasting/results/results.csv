@@ -2,3 +2,15 @@ name,split,MAE,RMSE
 persistence,val,1.2288,2.5126
 mean_10,val,1.6049,3.1373
 linear_regression,val,1.0961,2.31
+linear_regression,val,1.0961,2.31
+linear_regression,val,1.0961,2.31
+ridge,val,1.0961,2.31
+ridge,val,1.0961,2.31
+ridge,val,1.0961,2.31
+ridge,val,1.0961,2.31
+ridge,val,1.0961,2.31
+ridge_final_poly_scaled_clip,val,1.0582,2.2693
+ridge,val,1.0961,2.31
+ridge_final_poly_scaled_clip,val,1.0582,2.2693
+ridge,val,1.0961,2.31
+ridge_final_poly_scaled_clip,val,1.0582,2.2693
